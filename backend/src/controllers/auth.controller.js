@@ -139,4 +139,13 @@ export const refreshToken = async (req, res) => {
   }
 };
 
-export const getProfile = async (req, res) => {};
+export const getProfile = async (req, res) => {
+  try {
+    res.json(req.user);
+  } catch (error) {
+    logger.error("Error in refreshToken controller: ", error?.message);
+    res
+      .status(500)
+      .json({ message: "Internal Server Error", error: error.message });
+  }
+};
