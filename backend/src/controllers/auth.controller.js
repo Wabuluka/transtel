@@ -1,14 +1,14 @@
 import { ENV } from "../configs/env.js";
 import { redis } from "../configs/redis.js";
 import User from "../models/user.model.js";
-import jwt from "jsonwebtoken";
+import jwt, { decode } from "jsonwebtoken";
 import { logger } from "../utils/logger.js";
 
 const generateTokens = (userId) => {
   const accessToken = jwt.sign({ userId }, ENV.ACCESS_TOKEN_SECRET, {
     expiresIn: "15m",
   });
-  const refreshToken = jwt.sign({ userId }, ENV.REFRESH_TOKEN, {
+  const refreshToken = jwt.sign({ userId }, ENV.REFRESH_TOKEN_SECRET, {
     expiresIn: "7d",
   });
   return { accessToken, refreshToken };
@@ -53,16 +53,14 @@ export const signup = async (req, res) => {
     await storeRefreshToken(user._id, refreshToken);
     setCookies(res, accessToken, refreshToken);
     res.status(201).json({
-      message: "User created successfully",
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    logger.error("Error in signup controller: ", error?.message);
+    res.status(500).json({ message: error?.message });
   }
 };
 
@@ -75,18 +73,18 @@ export const signin = async (req, res) => {
     if (!isPasswordCorrect)
       return res.status(400).json({ message: "Invalid credentials" });
     const { accessToken, refreshToken } = generateTokens(user._id);
+
+    // store the cookie
     await storeRefreshToken(user._id, refreshToken);
     setCookies(res, accessToken, refreshToken);
-    res.status(201).json({
-      message: "User signed successfully",
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+    res.status(200).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
     });
   } catch (error) {
+    logger.error("Error in signin controller: ", error?.message);
     res
       .status(500)
       .json({ message: "Internal Server Error", error: error.message });
@@ -102,10 +100,43 @@ export const signout = async (req, res) => {
     }
     res.clearCookie("accessToken");
     res.clearCookie("refreshToken");
+    logger.info("Logged out successfully");
     res.json({ message: "Logged out successfully" });
   } catch (error) {
+    logger.error("Error in logout controller: ", error?.message);
     res
       .status(500)
       .json({ message: "Internal Server Error", error: error.message });
   }
 };
+
+// generate an access token from refresh token
+export const refreshToken = async (req, res) => {
+  try {
+    const refreshedToken = req.cookies.refreshToken;
+    if (!refreshedToken) {
+      logger.error("No refresh token provided");
+      return res.status(401).json({ message: "No refresh token provided" });
+    }
+    const decoded = jwt.verify(refreshedToken, ENV.REFRESH_TOKEN_SECRET);
+    // check stored key
+    const storedToken = await redis.get(`refresh_token: ${decoded.userId}`);
+    if (storedToken !== refreshedToken) {
+      logger.error("Invalid refresh token");
+      return res.status(401).json({ message: "Invalid refresh token" });
+    }
+    const { accessToken, refreshToken } = generateTokens(decoded.userId);
+    // store the cookie
+    await storeRefreshToken(decoded.userId, refreshToken);
+    setCookies(res, accessToken, refreshToken);
+    logger.info("Token refreshed successfully");
+    res.json({ message: "Token refreshed successfully" });
+  } catch (error) {
+    logger.error("Error in refreshToken controller: ", error?.message);
+    res
+      .status(500)
+      .json({ message: "Internal Server Error", error: error.message });
+  }
+};
+
+export const getProfile = async (req, res) => {};
