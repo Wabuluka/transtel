@@ -2,6 +2,7 @@ import { ENV } from "../configs/env.js";
 import { redis } from "../configs/redis.js";
 import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
+import { logger } from "../utils/logger.js";
 
 const generateTokens = (userId) => {
   const accessToken = jwt.sign({ userId }, ENV.ACCESS_TOKEN_SECRET, {
@@ -41,8 +42,10 @@ export const signup = async (req, res) => {
   const { email, password, name } = req.body;
   try {
     const userExists = await User.findOne({ email });
-    if (userExists)
+    if (userExists) {
+      logger.warn("User already exists");
       return res.status(400).json({ message: "User already exists" });
+    }
     const user = await User.create({ name, email, password });
 
     //authenticate user
